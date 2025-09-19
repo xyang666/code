@@ -7,7 +7,9 @@ from astropy.utils import iers
 import astropy.units as u
 from astropy.constants import G
 from poliastro.constants import J2_earth, GM_earth, M_earth, R_earth
-iers.conf.auto_download = False  # 禁用自动下载
+
+# iers.conf.auto_download = False  # 禁用自动下载
+iers.conf.iers_degraded_accuracy = 'warn'   # 仅在使用降级数据时发出警告
 
 def keplerian_to_cartesian(a, e, i, raan, argp, nu, mu):
     """
@@ -119,7 +121,7 @@ def eci_to_ecef_acc(x_eci, y_eci, z_eci, utc_time):
     # 转换为 ITRS
     coord_trans = coord.transform_to('itrs')
     
-    return coord_trans
+    return coord_trans.cartesian.xyz.value
 
 def eci_to_ecef_equinox(x_eci, y_eci, z_eci, utc_time):
     """"
@@ -141,13 +143,13 @@ def eci_to_ecef_equinox(x_eci, y_eci, z_eci, utc_time):
         - 应用岁差-章动矩阵、地球自转角和极移矩阵。
         - 极移采用小角度近似。
     """
-    iers_a = iers.IERS_Auto.open()
+    iers_a = iers.IERS_Auto.read("./finals2000A.all")
 
     # 章动+岁差矩阵
     pn = erfa.pnm00a(utc_time.tt.jd1, utc_time.tt.jd2)
 
     # 地球自转角
-    era = erfa.gst00b(utc_time.ut1.jd1, utc_time.ut1.jd1)
+    era = erfa.gst00b(utc_time.ut1.jd1, utc_time.ut1.jd2)
 
     R = np.array([
         [ np.cos(era), np.sin(era), 0.0],
@@ -171,6 +173,41 @@ def eci_to_ecef_equinox(x_eci, y_eci, z_eci, utc_time):
     total = pom @ R @ pn
     ecef = total @ np.array([x_eci, y_eci, z_eci])
     return ecef
+
+def ecef_to_eci_equinox(x_ecef, y_ecef, z_ecef, utc_time):
+    """"
+    使用基于春分点的变换（包括岁差、章动、地球自转和极移修正）将地心地固坐标系(ECEF)转换为地心惯性坐标系(ECI)。
+    """
+    iers_a = iers.IERS_Auto.read("./finals2000A.all")
+
+    # 章动+岁差矩阵
+    pn = erfa.pnm00a(utc_time.tt.jd1, utc_time.tt.jd2)
+
+    # 地球自转角
+    era = erfa.gst00b(utc_time.ut1.jd1, utc_time.ut1.jd2)
+
+    R = np.array([
+        [ np.cos(era), np.sin(era), 0.0],
+        [-np.sin(era), np.cos(era), 0.0],
+        [ 0.0,          0.0,        1.0]
+    ])
+
+    # 极移矩阵
+    # 获取极移参数
+    x_p, y_p = iers_a.pm_xy(utc_time.jd1, utc_time.jd2)
+
+    # 小角度近似
+    xp = x_p.to(u.rad).value
+    yp = y_p.to(u.rad).value
+
+    # s' 修正
+    sp = erfa.sp00(utc_time.tt.jd1, utc_time.tt.jd2)
+    pom = erfa.pom00(xp, yp, sp)
+
+    # 合成总矩阵
+    total = pom @ R @ pn
+    eci = total.T @ np.array([x_ecef, y_ecef, z_ecef])
+    return eci
 
 def eci_to_ecef_CIO(x_eci, y_eci, z_eci, utc_time):
     """
@@ -192,14 +229,17 @@ def eci_to_ecef_CIO(x_eci, y_eci, z_eci, utc_time):
         - 应用岁差-章动矩阵、地球自转角和极移矩阵。
         - 极移采用小角度近似。
     """
-    iers_a = iers.IERS_Auto.open()
+    iers_a = iers.IERS_Auto.read("./finals2000A.all")
 
     # 章动+岁差矩阵
-    x, y, s = erfa.xys06a(utc_time.tt.jd1, utc_time.tt.jd1)
+    x, y, s = erfa.xys06a(utc_time.tt.jd1, utc_time.tt.jd2)
     pn = erfa.c2ixys(x, y, s)
     
     # 地球自转角
-    era = erfa.era00(utc_time.ut1.jd1, utc_time.ut1.jd1)
+    era = erfa.era00(utc_time.ut1.jd1, utc_time.ut1.jd2)
+    # 使用简化公式计算 ERA
+    # tu = utc_time.ut1.jd - 2451545.0
+    # era = 2* np.pi * ((0.7790572732640 + 1.00273781191135448 * tu) % 1)
 
     R = np.array([
         [ np.cos(era), np.sin(era), 0.0],
@@ -223,6 +263,42 @@ def eci_to_ecef_CIO(x_eci, y_eci, z_eci, utc_time):
     total = pom @ R @ pn
     ecef = total @ np.array([x_eci, y_eci, z_eci])
     return ecef
+
+def ecef_to_eci_CIO(x_ecef, y_ecef, z_ecef, utc_time):
+    """
+    使用基于CIO的变换（包括岁差、章动、地球自转和极移修正）将地心地固坐标系 (ECEF) 转换为地心惯性坐标系 (ECI) 。
+    """
+    iers_a = iers.IERS_Auto.read("./finals2000A.all")
+
+    # 章动+岁差矩阵
+    x, y, s = erfa.xys06a(utc_time.tt.jd1, utc_time.tt.jd2)
+    pn = erfa.c2ixys(x, y, s)
+    
+    # 地球自转角
+    era = erfa.era00(utc_time.ut1.jd1, utc_time.ut1.jd2)
+
+    R = np.array([
+        [ np.cos(era), np.sin(era), 0.0],
+        [-np.sin(era), np.cos(era), 0.0],
+        [ 0.0,          0.0,        1.0]
+    ])
+
+    # 极移矩阵
+    # 获取极移参数
+    x_p, y_p = iers_a.pm_xy(utc_time.jd1, utc_time.jd2)
+
+    # 小角度近似
+    xp = x_p.to(u.rad).value
+    yp = y_p.to(u.rad).value
+
+    # s' 修正
+    sp = erfa.sp00(utc_time.tt.jd1, utc_time.tt.jd2)
+    pom = erfa.pom00(xp, yp, sp)
+
+    # 合成总矩阵
+    total = pom @ R @ pn
+    eci = total.T @ np.array([x_ecef, y_ecef, z_ecef])
+    return eci
 
 def solve_kepler(M, e):
     """
@@ -437,36 +513,49 @@ def propagate_numerical(r0, v0, t0, t_targets, mu=GM_earth, use_j2=False,
     }
 
 if __name__ == "__main__":
-    # 初始轨道根数
-    a = 7000e3  # m
-    e = 0.001
-    inc = np.radians(51.6)
-    raan = np.radians(247.46)
-    argp = np.radians(130.536)
-    nu0 = np.radians(10.0)
+    # # 初始轨道根数
+    # a = 7000e3  # m
+    # e = 0.001
+    # inc = np.radians(51.6)
+    # raan = np.radians(247.46)
+    # argp = np.radians(130.536)
+    # nu0 = np.radians(10.0)
 
-    r0, v0 = keplerian_to_cartesian(a, e, inc, raan, argp, nu0, GM_earth.value)
-    t0 = Time("2025-09-18T00:00:00", scale="utc")
-    # t_targets = t0 + TimeDelta(np.arange(0, 600, 60)*u.s)
-    t_targets = t0 + 1*u.day
+    # r0, v0 = keplerian_to_cartesian(a, e, inc, raan, argp, nu0, GM_earth.value)
+    # t0 = Time("2025-09-18T00:00:00", scale="utc")
+    # # t_targets = t0 + TimeDelta(np.arange(0, 600, 60)*u.s)
+    # t_targets = t0 + 1*u.day
     
     
-    # from poliastro.twobody import Orbit
-    # from poliastro.bodies import Earth
-    # epoch = Time("2025-09-18T00:00:00", scale="utc")
-    # orb = Orbit.from_classical(
-    #     attractor=Earth,
-    #     a=7000e3*u.m, ecc=0.001*u.one,
-    #     inc=51.6*u.deg, raan=247.46*u.deg, argp=130.536*u.deg, nu=10*u.deg,
-    #     epoch=epoch
-    # )
-    # r0v0 = orb._state.to_vectors()
-    # r0 = r0v0.r.to_value(u.m)
-    # v0 = r0v0.v.to_value(u.m/u.s)
+    # # from poliastro.twobody import Orbit
+    # # from poliastro.bodies import Earth
+    # # epoch = Time("2025-09-18T00:00:00", scale="utc")
+    # # orb = Orbit.from_classical(
+    # #     attractor=Earth,
+    # #     a=7000e3*u.m, ecc=0.001*u.one,
+    # #     inc=51.6*u.deg, raan=247.46*u.deg, argp=130.536*u.deg, nu=10*u.deg,
+    # #     epoch=epoch
+    # # )
+    # # r0v0 = orb._state.to_vectors()
+    # # r0 = r0v0.r.to_value(u.m)
+    # # v0 = r0v0.v.to_value(u.m/u.s)
     
     
-    res = propagate_numerical(r0, v0, t0, t_targets, use_j2=False, atol=1e-12, rtol=1e-11)
-    r, v = propagate_kepler(a, e, inc, raan, argp, nu0, t0, t_targets)
-    print(f"Kepler Propagation (r:{r}, v:{v})")
-    print(f"Numerical Propagation (r:{res['r'][-1]}, v:{res['v'][-1]})")
-    print(f"r0:{r0}, v0:{v0}")
+    # res = propagate_numerical(r0, v0, t0, t_targets, use_j2=False, atol=1e-12, rtol=1e-11)
+    # r, v = propagate_kepler(a, e, inc, raan, argp, nu0, t0, t_targets)
+    # print(f"Kepler Propagation (r:{r}, v:{v})")
+    # print(f"Numerical Propagation (r:{res['r'][-1]}, v:{res['v'][-1]})")
+    # print(f"r0:{r0}, v0:{v0}")
+    t = Time("2025-09-18T00:00:00", scale="utc")
+
+    ecef = eci_to_ecef_CIO(1,0,0, t)
+    print("CIO:{}".format(ecef))    
+
+    ecef = eci_to_ecef_equinox(1,0,0, t)
+    print("equinox:{}".format(ecef))
+    
+    ecef = eci_to_ecef(1,0,0, t)
+    print("astropy:{}".format(ecef))
+    
+    ecef = eci_to_ecef_acc(1,0,0, t)
+    print("astropy_acc:{}".format(ecef))
