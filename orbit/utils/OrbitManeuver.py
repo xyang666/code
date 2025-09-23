@@ -1,3 +1,6 @@
+# Copyright (c) 2025 XIE YANG
+# Licensed under the Apache 2.0 License.
+
 import numpy as np
 from scipy.integrate import solve_ivp
 from astropy.time import Time, TimeDelta
@@ -5,8 +8,8 @@ from astropy.coordinates import SkyCoord
 from astropy.utils import iers
 import astropy.units as u
 from poliastro.constants import J2_earth, GM_earth, M_earth, R_earth
-from OrbitPropagate import propagate_kepler, propagate_numerical
-from CoordinateTransfrom import keplerian_to_cartesian, cartesian_to_keplerian
+from .OrbitPropagate import propagate_kepler, propagate_numerical
+from .CoordinateTransfrom import kepler_to_cartesian, cartesian_to_kepler
 
 # iers.conf.auto_download = False  # 禁用自动下载
 iers.conf.iers_degraded_accuracy = 'warn'   # 仅在使用降级数据时发出警告
@@ -25,7 +28,7 @@ def maneuver_Kepler(r0, v0, delta_v, t0, t):
         r, v : 在 ECI 下的矢量 (m, m/s)
     """
     v0_new = v0 + delta_v
-    kepler = cartesian_to_keplerian(r0, v0_new)
+    kepler = cartesian_to_kepler(r0, v0_new)
     r, v = propagate_kepler(kepler['a'].value, kepler['e'].value, kepler['i'].value, 
                      kepler['raan'].value, kepler['argp'].value, kepler['nu'].value, 
                      t0, t)

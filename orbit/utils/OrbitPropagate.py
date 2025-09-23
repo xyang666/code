@@ -1,3 +1,6 @@
+# Copyright (c) 2025 XIE YANG
+# Licensed under the Apache 2.0 License.
+
 import numpy as np
 from scipy.integrate import solve_ivp
 from astropy.time import Time, TimeDelta
@@ -5,6 +8,7 @@ from astropy.coordinates import SkyCoord
 from astropy.utils import iers
 import astropy.units as u
 from poliastro.constants import J2_earth, GM_earth, M_earth, R_earth
+from scipy.optimize import root_scalar
 
 # iers.conf.auto_download = False  # 禁用自动下载
 iers.conf.iers_degraded_accuracy = 'warn'   # 仅在使用降级数据时发出警告
@@ -59,7 +63,9 @@ def propagate_kepler(a, e, i, raan, argp, nu0, t0, t):
     M = M0 + n*dt                  # 目标平近点角
 
     # 解开普勒方程 M = E - e*sinE
-    E = solve_kepler(M, e)
+    def kepler_eq(E): return E - e*np.sin(E) - M
+    sol = root_scalar(kepler_eq, bracket=[M-1, M+1], method='brentq')
+    E = sol.root
 
     # 偏近点角 -> 真近点角
     nu = 2*np.arctan2(np.sqrt(1+e)*np.sin(E/2),
@@ -129,7 +135,7 @@ def rhs(t, y, mu, use_j2=False):
         a = accel_two_body(r, mu=mu)
     return np.hstack((v, a))
 
-def propagate_numerical(r0, v0, t0, t_targets, mu=GM_earth, use_j2=False,
+def propagate_numerical(r0, v0, t0, t_targets, mu=GM_earth, use_j2=False, rhs=rhs,
                         rtol=1e-9, atol=1e-12, method='DOP853'):
     """
     数值积分轨道（支持多个目标时刻）
@@ -197,13 +203,14 @@ def propagate_numerical(r0, v0, t0, t_targets, mu=GM_earth, use_j2=False,
     # 这里假设目标时刻在同一方向
     t_span = (t_min, t_max)
 
-    sol = solve_ivp(fun=lambda tt, yy: rhs(tt, yy, mu=GM_earth.value, use_j2=use_j2),
+    sol = solve_ivp(fun=lambda tt, yy: rhs(tt, yy, mu=mu.value, use_j2=use_j2),
                     t_span=t_span,
                     y0=y0,
                     method=method,
                     t_eval=dt_sorted,
                     rtol=rtol,
-                    atol=atol)
+                    atol=atol,
+                    vectorized=False)
 
     if not sol.success:
         raise RuntimeError("数值积分失败: " + str(sol.message))

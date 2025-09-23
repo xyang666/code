@@ -26,3 +26,9 @@
 
 # 3.联系方式
 如有问题或建议，请提交 issue 或联系项目维护者。
+
+# 许可
+本项目采用 MIT 协议发布，详情请参见 [LICENSE](LICENSE) 文件。
+
+# License
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

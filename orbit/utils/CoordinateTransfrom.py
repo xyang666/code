@@ -1,3 +1,6 @@
+# Copyright (c) 2025 XIE YANG
+# Licensed under the Apache 2.0 License.
+
 import erfa
 import numpy as np
 from astropy.time import Time, TimeDelta
@@ -10,7 +13,7 @@ from poliastro.constants import GM_earth
 # iers.conf.auto_download = False  # 禁用自动下载
 iers.conf.iers_degraded_accuracy = 'warn'   # 仅在使用降级数据时发出警告
 
-def keplerian_to_cartesian(a, e, i, raan, argp, nu, mu=GM_earth):
+def kepler_to_cartesian(a, e, i, raan, argp, nu, mu=GM_earth):
     """
     将开普勒轨道根数转换为笛卡尔位置和速度矢量 (IJK坐标系)。
 
@@ -69,7 +72,7 @@ def keplerian_to_cartesian(a, e, i, raan, argp, nu, mu=GM_earth):
 
     return r_ijk, v_ijk
 
-def cartesian_to_keplerian(r, v, mu=GM_earth):
+def cartesian_to_kepler(r, v, mu=GM_earth):
     """将eci坐标系(笛卡尔系)位置 r 和速度 v 转换为 Kepler 元素。
 
     Parameters:
@@ -404,7 +407,7 @@ if __name__ == "__main__":
     # argp = np.radians(130.536)
     # nu0 = np.radians(10.0)
 
-    # r0, v0 = keplerian_to_cartesian(a, e, inc, raan, argp, nu0, GM_earth.value)
+    # r0, v0 = kepler_to_cartesian(a, e, inc, raan, argp, nu0, GM_earth.value)
     # t0 = Time("2025-09-18T00:00:00", scale="utc")
     # # t_targets = t0 + TimeDelta(np.arange(0, 600, 60)*u.s)
     # t_targets = t0 + 1*u.day
@@ -422,7 +425,7 @@ if __name__ == "__main__":
     r0v0 = orb._state.to_vectors()
     r0 = r0v0.r.to_value(u.m)
     v0 = r0v0.v.to_value(u.m/u.s)
-    k = cartesian_to_keplerian(r0, v0)
+    k = cartesian_to_kepler(r0, v0)
     
     # res = propagate_numerical(r0, v0, t0, t_targets, use_j2=False, atol=1e-12, rtol=1e-11)
     # r, v = propagate_kepler(a, e, inc, raan, argp, nu0, t0, t_targets)
